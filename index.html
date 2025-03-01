@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FFxiv - Caloric Fire</title>
+    <style>
+
+        ol {
+            padding-left: 20px;  /* Indentation */
+        }
+
+        li {
+            margin-bottom: 10px;  /* Space between list items */
+        }
+
+        .nested {
+            list-style-type: decimal;  /* Numbering style for nested lists */
+            padding-left: 20px;        /* Further indentation for nested items */
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    
+    <canvas id="canvas" width="500" height="500"></canvas>
+    <canvas id="canvas2" width="500" height="500"></canvas>
+    <div>
+        <p>
+            Wie funktioniert das hier? <br>
+            Das ist eine Nachstellung der Caloric Mechanic. Genauer vom 2. Schritt, wenn sich die Leute mit dem Feuerdebuff bewegen muessen. <br>
+            Auf der linken Abbildung koennt ihr eintragen, wo die mit den Debuffs starten sollen. Die rechte Seite zeigt, wie es geloest werden soll. <br>
+            Klicke auf einen Waymark und er wird Rot markiert. Dort steht dann jemand mit einem Feuermarker ueber dem Kopf. <br>
+            Klickst nochmal drauf. Also auf einen schon rot markierten Waymark, wird er Orange und steht fuer jemanden ohne Feuermarker ueber dem Kopf. <br>
+            Du brauchst immer 2 Rote und 2 Orange Markierungen, damit dir eine Loesung angezeigt werden kann. <br>
+            In der Loesungsabbildung werden die Hinterbliebenden Windleute als Gruen angezeigt. Die roten Linien sind die Laufwege, der Personen mit Feuermarker. <br>
+            Die Orangen, die ohne Marker. <br><br>
+            Die Erklaerungen hierdrunter sind nochmal fuer Wind und Feuer laufen, falls man das nochmal nachlesen moechte. Mit dem Button wechselst du zwischen den Erklaerungen.
+        </p>
+    </div>
+    <div>
+        <button id="toggleButton">Display Wind Explanation</button>
+        <div id="windText" class="hidden">
+            <ol>
+                <li>Du hast Wind und stehst aussen.
+                    <ol class="nested">
+                        <li>Du schaust Clockwise, ob direkt neben dir jemand mit Feuer ueber dem Kopf steht.</li>
+                        <li>Lauf zu ihnen.</li>
+                        <li>Sonst laeufst du Counterclockwise zum naechsten Marker.</li>
+                    </ol>
+                </li>
+                <li>Du hast Wind innen.
+                    <ol class="nested">
+                        <li>Du wartest bis die aussenstehenden mit Wind sich bewegt haben.</li>
+                        <li>Bist du DPS schaust du von Norden (2 Marker) Clockwise <br>
+                            bis du eine freie Person mit Feuer ueber dem Kopf gefunden hast und gehst zu ihr.</li>
+                        <li>Als Support schaust du von Nordwesten (C Marker) Counterclockwise <br>
+                            und gehst zur ersten freien Feuerperson.</li>
+                    </ol>
+                </li>
+            </ol>
+        </div>
+        <div id="fireText">
+            Nachdem Windleute gelaufen sind und erste Explosion:
+            <ol>
+                <li>Du hast einer Feuermarker ueber deinem Kopf</li>
+                    <ol class="nested">
+                        <li>Du schaust Clockwise bis zur naechsten Person. <br>
+                            Hat diese auch einen Feuermarker, schaust du stattdessen Counterclockwise bis zur naechsten Person</li>
+                        <li>Jetzt kommt es darauf an wie viele Waymarks zwischen euch frei sind.</li>
+                        <li>Ist kein Waymark zwischen euch frei. Euer Partner also auf dem naechsten Waymark steht. Geht ihr nach aussen.</li>
+                        <li>Ist ein Waymark frei. Trefft ihr euch auf diesem.</li>
+                    </ol>
+                <li>Du hast keinen Feuermarker ueber deinem Kopf.</li>
+                    <ol class="nested">
+                        <li>Den Schritt vom "Mit feuer Marker" umgedreht. Also zuerst Counterclockwise und nach Feuermarker suchen.</li>
+                        <li>Der Rest ist genauso.</li>
+                    </ol>
+            </ol>
+        </div>
+    </div>
+</body>
+<script>
+
+
+class HexCircle {
+    constructor(x, y, description, color) {
+        this.x = x;
+        this.y = y;
+        this.description = description
+        this.color = color
+        this.radius = 8;
+        this.state = 0;
+        this.next = null;
+        this.previous = null;
+        this.middle = null;
+        this.outerNext = null;
+        this.outerPrevious = null;
+    }
+
+    changeState() {
+        this.state = (this.state + 1) % 3;
+    }
+
+    drawSelf(ctx, color) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+
+        // Set fill color based on state
+        const colors = ["white", "red", "orange"];
+        ctx.fillStyle = color || colors[this.state];
+        ctx.fill();
+
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.font = "20px Arial"
+        ctx.fillStyle = "black"
+        ctx.fillText(this.description, this.x - 5, this.y - 10)
+    }
+
+    drawHexLinesOnly(ctx) {
+        ctx.beginPath()
+        ctx.lineWidth = 1
+        ctx.strokeStyle = "black"
+        ctx.moveTo(this.x, this.y)
+        ctx.lineTo(this.next.x, this.next.y)
+        ctx.stroke()
+    }
+
+    drawLines(ctx) {
+        if(this.next && this.previous && this.middle && this.outerNext && this.outerPrevious) {
+            ctx.beginPath()
+            ctx.lineWidth = 1
+            ctx.strokeStyle = "black"
+            ctx.moveTo(this.x, this.y)
+            ctx.lineTo(this.next.x, this.next.y)
+            ctx.moveTo(this.x, this.y)
+            ctx.lineTo(this.middle.x, this.middle.y)
+            ctx.moveTo(this.x, this.y)
+            ctx.lineTo(this.outerNext.x, this.outerNext.y)
+            ctx.moveTo(this.x, this.y)
+            ctx.lineTo(this.outerPrevious.x, this.outerPrevious.y)
+            ctx.stroke()
+        }
+    }
+
+    isHit(x, y) {
+        const dist = Math.sqrt((this.x - x) ** 2 + (this.y - y) ** 2);
+        if(dist < this.radius) {
+            this.changeState()
+        }
+    }
+}
+
+class MoveToCircle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 8;
+    }
+
+    drawSelf(ctx, color) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+
+        ctx.fillStyle = color || "white";
+        ctx.fill();
+
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.lineWidth = 1
+    }
+}
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+
+const centerX = 250, centerY = 250; // Center of the canvas
+const midPoint = new MoveToCircle(centerX, centerY)
+
+
+const checker = document.getElementById("canvas2");
+const ctx2 = checker.getContext("2d")
+
+const midX = 250, midY = 250;
+const checkerMid = new MoveToCircle(midX, midY)
+
+
+const marker = ["2", "A", "B", "3", "D", "C"]
+const colors = ["yellow", "red", "yellow", "blue", "purple", "blue"]
+
+function getHexPoints(cX, cY, midP) {
+    const arr = [];
+
+    for (let i = 0; i < 6; i++) {
+        let angle = (-Math.PI / 2) + (Math.PI / 3) * i; // Start at the top
+        let x = cX + 100 * Math.cos(angle);
+        let y = cY + 100 * Math.sin(angle);
+
+        const newHexPoint = new HexCircle(x,y, marker[i], colors[i]);
+        newHexPoint.middle = midP;
+        arr.push(newHexPoint);
+    }
+    return arr;
+}
+
+const checkerHexPoints = getHexPoints(midX, midY, checkerMid)
+const hexPoints = getHexPoints(centerX, centerY, midPoint)
+
+function getOuterPoints(hexP) {
+    const arr = []
+    for (let i = 0; i < 6; i++) {
+        let nextIndex = (i + 1) % 6;
+        let midX = (hexP[i].x + hexP[nextIndex].x) / 2;
+        let midY = (hexP[i].y + hexP[nextIndex].y) / 2;
+        
+        let angle = Math.atan2(midY - centerY, midX - centerX);
+        let outerX = midX + 100 * 0.6 * Math.cos(angle);
+        let outerY = midY + 100 * 0.6 * Math.sin(angle);
+        
+        const newCircle = new MoveToCircle(outerX, outerY)
+        hexP[i].outerNext = newCircle;
+        hexP[nextIndex].outerPrevious = newCircle;
+        hexP[i].next = hexP[nextIndex]
+        hexP[nextIndex].previous = hexP[i]
+        arr.push(newCircle);
+    }   
+    return arr;
+}
+
+const outerCircles = getOuterPoints(hexPoints)
+const checkerOuterCircles = getOuterPoints(checkerHexPoints)
+
+function draw() {
+    ctx.clearRect(0,0, canvas.width, canvas.height);
+    for(let i = 0; i < 6; i++){
+        hexPoints[i].drawHexLinesOnly(ctx)
+    }
+    for(let i = 0; i < 6; i++){
+        hexPoints[i].drawSelf(ctx)
+    }
+
+}
+
+function checkerDraw() {
+    ctx2.clearRect(0,0, checker.width, checker.height);
+    for(let i = 0; i < 6; i++){
+        checkerHexPoints[i].drawLines(ctx2)
+    }
+    for(let i = 0; i < 6; i++){
+        checkerHexPoints[i].drawSelf(ctx2)
+        checkerOuterCircles[i].drawSelf(ctx2)
+    }
+    checkerMid.drawSelf(ctx2)
+
+    const l = logic()
+    if(l === null) {
+        ctx2.save();
+        ctx2.font = "24px Arial"; // Set font size and type
+        ctx2.textAlign = "center"; // Center horizontally
+        ctx2.textBaseline = "top"; // Align from the top
+        ctx2.fillStyle = "black"; // Text color
+        ctx2.fillText("Not a Valid Pattern", checker.width / 2, 10); // Draw at (middle, top + margin)
+        ctx2.restore();
+    } else {
+        coloringSolution(l.firstPair.marker, l.firstPair.partner, l.firstPair.dist)
+        coloringSolution(l.secondPair.marker, l.secondPair.partner, l.secondPair.dist)
+    }
+
+}
+
+function drawBoth() {
+    draw()
+    checkerDraw()
+}
+
+drawBoth()
+
+canvas.addEventListener("click", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    for(let i = 0; i < 6; i++ ) {
+        hexPoints[i].isHit(x,y)
+    }
+    drawBoth()
+})
+
+function logic() {
+    let s1 = 0;
+    let s2 = 0;
+    for(let i = 0; i < 6; i++) {
+        if(hexPoints[i].state === 1) s1 += 1
+        if(hexPoints[i].state === 2) s2 += 1
+    }
+    if(s1 != 2 || s2 != 2) return null
+
+    let i = 0;
+    let first = hexPoints[i]
+
+    while(first.state != 1) {
+        i++
+        first = hexPoints[i]
+    }
+
+    first = hexPoints[i]
+
+    i++
+
+    let second = hexPoints[i]
+
+    while(second.state != 1) {
+        i++
+        second = hexPoints[i]
+    }
+    second = hexPoints[i]
+
+    second = hexPoints[i]
+    let partnerFound = false;
+    let count = 1
+    let mode = "clockwise"
+    let partner = first.next;
+    while(!partnerFound) {
+        if(partner.state === 1) {
+            mode = "counterclockwise";
+            count = -1
+            partner = first.previous
+        } else if(partner.state === 0 && mode === "clockwise") {
+            partner = partner.next
+            count++
+        } else if(partner.state === 0 && mode === "counterclockwise") {
+            partner = partner.previous
+            count--
+        } else if(partner.state === 2) {
+            partnerFound = true
+        }
+    }
+
+    partnerFound = false;
+    let count2 = 1
+    mode = "clockwise"
+    let secondPartner = second.next
+
+    while(!partnerFound) {
+        if(secondPartner.state === 1) {
+            mode = "counterclockwise";
+            count2 = -1
+            secondPartner = second.previous
+        } else if(secondPartner.state === 0 && mode === "clockwise") {
+            secondPartner = secondPartner.next
+            count2++
+        } else if(secondPartner.state === 0 && mode === "counterclockwise") {
+            secondPartner = secondPartner.previous
+            count2--
+        } else if(secondPartner.state === 2) {
+            partnerFound = true
+        }
+    }
+
+    solution = {
+        firstPair: {
+            marker: first, partner: partner, dist: count
+        },
+        secondPair: {
+            marker: second, partner: secondPartner, dist: count2
+        }
+    }
+    
+    return solution
+}
+
+function coloringSolution(marker, partner, dist) {
+    
+    let dest;
+    switch (dist) {
+        case 1: dest = marker.outerNext; break;
+        case 2: dest = marker.next; break;
+        case 3: case -3: dest = marker.middle; break;
+        case -1: dest = marker.outerPrevious; break;
+        case -2: dest = marker.previous; break;
+        default: dest = null;
+    }
+    if (!dest) return; 
+    colorLineToDest(marker, partner, dest, "red");
+    recolorPoints(marker, partner, dest)
+}
+
+function colorLineToDest(first, second, dest, color) {
+    ctx2.save()
+    ctx2.beginPath()
+    ctx2.strokeStyle = "red";
+    ctx2.lineWidth = 5
+
+    ctx2.moveTo(first.x, first.y)
+    ctx2.lineTo(dest.x, dest.y)
+    ctx2.stroke()
+
+    ctx2.beginPath()
+
+    ctx2.strokeStyle = "orange"
+    ctx2.moveTo(second.x, second.y)
+    ctx2.lineTo(dest.x, dest.y)
+    ctx2.stroke()
+    ctx2.restore()
+}
+
+function recolorPoints(marker, partner, dest) {
+    marker.drawSelf(ctx2, "green");
+    partner.drawSelf(ctx2, "green");
+    dest.drawSelf(ctx2)
+    drawMastercardStyleCircles(dest.x, dest.y)
+
+}
+
+function drawMastercardStyleCircles(x, y) {
+    const radius = 5; // Each small circle has a 4px radius
+    const offset = 3; // Half of the overlap distance
+
+    ctx2.fillStyle = "red"; 
+    ctx2.beginPath();
+    ctx2.arc(x - offset, y, radius, 0, Math.PI * 2);
+    ctx2.fill();
+
+    ctx2.fillStyle = "orange"; 
+    ctx2.beginPath();
+    ctx2.arc(x + offset, y, radius, 0, Math.PI * 2);
+    ctx2.fill();
+}
+
+document.getElementById("toggleButton").addEventListener("click", (e) => {
+    const hi = document.getElementById("windText").classList.toggle("hidden");
+    const he = document.getElementById("fireText").classList.toggle("hidden");
+
+    e.target.innerText = document.getElementById("windText").classList.contains("hidden") 
+        ? "Display Fire Explanation" 
+        : "Display Wind Explanation";
+})
+
+</script>
+</html>
